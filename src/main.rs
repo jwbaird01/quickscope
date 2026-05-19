@@ -1,4 +1,6 @@
 use tokio::process::Command;
+use std::env;
+mod funky;
 
 /*
 TODO: 
@@ -13,12 +15,25 @@ TODO:
 
     Possibly could use config input as well.. there seems to be more features than just default including nessus and other scanners
 */
-
-async fn snipe(workspace:String, file:String) {
-    // runs sn1per per host from input
+fn help(full:bool){
+    if full {
+        println!("FULLHELP");
+    }
+    println!("quickscope -w <NAME_WORKSPACE> -f <FROM_KOBOSCAN>")
 }
+
+/*
+I need to import the IP processing from koboscan, this honestly may replace it.. 
+I need to look into if there is a mode that skips port scan then runs the other modules
+ - doing so will speed up the actual scanning but still pull the extra info and categorize it into sn1per and msfdb formats
+*/
 
 #[tokio::main]
 fn main() {
-    println!("null")
+    let args: Vec<String> = env::args().collect();
+    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        help(true);
+    } else if args.contains(&"-w".to_string()) && args.contains(&"-f".to_string()) {
+        funky::snipe();
+    }
 }
