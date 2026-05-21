@@ -1,22 +1,47 @@
 /*
 Custom functions for main.rs in this project
+
+ - Noticed that merging the internal and external scans will cause external services that block icmp not return... should fix
+ - using the IP may not work in all cases.. need to store the domains as well as the IPs before feeding to sn1per
+
 */
 
-use std::{collections::HashSet, net::{IpAddr, SocketAddr}, string};
+use std::{collections::HashSet, hash::Hash, net::{IpAddr, SocketAddr}, string};
 
 async fn snipe(workspace:String, hosts:Vec<SocketAddr>) {
     // runs sn1per per host from input
     for socket in hosts {
-
+        //sniper -t <TARGET_IP> -m port -p <PORT_NUMBER> -o
     }
 }
 
-async fn base_scan(hosts:Vec<String>) -> (HashSet<SocketAddr>){ // base scan to replace the main fn of koboscan
+async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<String>){ // base scan to replace the main fn of koboscan
     println!("[I] Sorting into target list");
-    let targets: HashSet<IpAddr> =  sort_targets(hosts);
-    let live = icmp_scan(targets).await;
-    
-    
+    let (targets,domains) =  sort_targets(hosts);
+    let live: Vec<IpAddr> = icmp_scan(targets).await;
+
+        // Scanner setup for rustscan
+
+    let range: PortRange = PortRange {
+        start: 1,
+        end:65535 //range needs to be set with arg..
+    };
+    let strat: PortStrategy = PortStrategy::pick(&Some(range), None, ScanOrder::Serial);
+    let threads: u16 = 5000; //should be set by args
+    let scanner: Scanner = Scanner::new(&internal_pinged, threads, Duration::from_millis(1000), 1, false, strat, true, vec![9100,9101,9102], false);
+        
+        // starting scans 
+
+    let mut ports:Vec<SocketAddr> = Vec::new();
+    if !live.is_empty() {
+        ports = block_on(internal_scanner.run());
+        //println!("Internal Results: {:?}",i_ports);
+    } else {
+        eprintln!("[!] No targets are live");
+    }
+
+    let deduped: HashMap<IpAddr, HashSet<u16>> = dedupe_sockets(ports);
+    (deduped,domains)
 }
 
 /* 
@@ -26,12 +51,13 @@ async fn base_scan(hosts:Vec<String>) -> (HashSet<SocketAddr>){ // base scan to 
     * some may contain updates/edits
 */
 
-fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>) {
+fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) {
     /*
     returns the full target IP list as a tuple with (internal,external,domain) Vec<Strings>
      */
 
     let mut targets: HashSet<IpAddr> = HashSet::new();
+    let mut domains:HashSet<String> = HashSet::new();
 
     let domain_re = Regex::new(r#"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"#).expect("[!] Not a Domain");
 
@@ -80,10 +106,14 @@ fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>) {
             }
         }
         if domain_re.is_match(&target) {
-            domain_targets.insert(target.clone().to_string());
+            domains.insert(target.clone().to_string());
+        }
+        let d_hostaddr = nslookup(domains.clone());
+        for d_target in d_hostaddr {
+            targets.insert(d_target);
         }
     }
-    targets
+    (targets,domains)
 }
 
 fn nslookup(domains:HashSet<String>) -> HashSet<IpAddr> {
@@ -146,64 +176,11 @@ async fn icmp_scan(targets:HashSet<IpAddr>,) -> (Vec<IpAddr>) {
         o_targets
 }
 
-async fn service_detection(sockets:HashMap<IpAddr, HashSet<u16>>) -> Vec<(std::net::SocketAddr, String)> {
+/*
 
-    let mut tasks = Vec::new();
-    let mut out: Vec<(SocketAddr, String)> = Vec::new();
+    Service Detection is not needed since Sn1per will do it anyway.
 
-    for (ip ,ports_set)in sockets{
-
-        let ports:String = ports_set.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
-
-        let cmd = tokio::spawn(async move {
-            let nmap = Command::new("nmap")
-                .arg("-p").arg(&ports)
-                .arg("-Pn").arg("-sV").arg("-oG").arg("-")
-                .arg(ip.to_string())
-                .output()
-                .await
-                .expect("[!] Nmap Failed to Run.");
-            nmap
-        });
-        tasks.push(cmd);
-    }
-    
-    let results = join_all(tasks).await;
-    for result in results {
-        //println!("{:#?}",&result);
-        match result {
-            Ok(output) => {
-                let tmp_out = String::from_utf8(output.stdout).expect("[!] Failed to convert output to string.");
-
-                let tmp_service_list:Vec<String> = tmp_out.split("Ports: ").nth(1).unwrap_or("").split("\n# Nmap").nth(0).unwrap_or("").split(",").map(str::trim).map(String::from).collect();
-                //println!("{:#?}",tmp_service_list);
-
-                let tmp_ip = tmp_out.split("Host: ").nth(1).and_then(|s| s.split(' ').nth(0)).unwrap_or("").to_string();
-                
-                                
-                for service in tmp_service_list {
-                    let tmp_port = service.split("/").nth(0).unwrap_or("").to_string();
-                    let addr_str = format!("{}:{}", tmp_ip, tmp_port);
-                    //println!("{}",tmp_port);
-                    let tmp_sock = match addr_str.parse::<std::net::SocketAddr>() {
-                        Ok(sock) => sock,
-                        Err(_) => {
-                            println!("[!] Invalid socket address: {}", addr_str);
-                            continue;
-                        }
-                    };
-
-                    let tmp_service: Vec<&str> = service.split('/').collect();
-                    let out_service: String = format!("{}/{}",tmp_service[4],tmp_service[6]);
-
-                    out.push((tmp_sock,out_service));
-                }
-            }
-            Err(e) => eprintln!("[!] Failed task: {e}"),
-        }
-    }
-    out
-}
+*/
 
 fn to_hashmap(services:Vec<(SocketAddr, String)>) -> HashMap<String,HashSet<SocketAddr>>{
     let mut out_map: HashMap<String,HashSet<SocketAddr>> = HashMap::new();
