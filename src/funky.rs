@@ -21,11 +21,21 @@ pub async fn snipe(workspace:String, scope:String) {
         in_the_sights.push(target.to_string());
     }
     let (hosts,domains) = base_scan(in_the_sights).await;
-    for (target, ports) in hosts {
-        //sniper -t <TARGET_IP> -m port -p <PORT_NUMBER> -o -re
+    for (target, ports_set) in hosts {
+        let ports:String = ports_set.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
+        //sniper -w <WORKSPACE> -t <TARGET_IP> -m port -p <PORT_NUMBER> -o -re
+        let sniper = Command::new("sniper")
+            .arg("-w").arg(&workspace)
+            .arg("-t").arg(&target.to_string())
+            .arg("-m").arg("port").arg("-p").arg(ports)
+            .arg("-o").arg("-re");
     }
     for domain in domains {
-        //sniper -t <DOMAIN> -o -re
+        //sniper -w <WORKSPACE> -t <DOMAIN> -o -re
+        let sniper = Command::new("sniper")
+            .arg("-w").arg(&workspace)
+            .arg("-t").arg(&domain.to_string())
+            .arg("-o").arg("-re");
     }
 }
 
