@@ -16,19 +16,27 @@ use regex::Regex;
 
 pub async fn snipe(workspace:String, scope:String) {
     // runs sn1per per host from input
+    let mut tasks = Vec::new();
     let mut in_the_sights:Vec<String> = Vec::new();
     for target in scope.split(",") {
         in_the_sights.push(target.to_string());
     }
     let (hosts,domains) = base_scan(in_the_sights).await;
     for (target, ports_set) in hosts {
-        let ports:String = ports_set.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
-        //sniper -w <WORKSPACE> -t <TARGET_IP> -m port -p <PORT_NUMBER> -o -re
-        let sniper = Command::new("sniper")
-            .arg("-w").arg(&workspace)
-            .arg("-t").arg(&target.to_string())
-            .arg("-m").arg("port").arg("-p").arg(ports)
-            .arg("-o").arg("-re");
+            let ports:String = ports_set.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
+            //sniper -w <WORKSPACE> -t <TARGET_IP> -m port -p <PORT_NUMBER> -o -re
+            let cmd = tokio::spawn(async move {
+                let sniper = Command::new("sniper")
+                    .arg("-w").arg(&workspace)
+                    .arg("-t").arg(&target.to_string())
+                    .arg("-m").arg("port").arg("-p").arg(ports)
+                    .arg("-o").arg("-re")
+                    .output()
+                    .await
+                    .expect("[!] Sn1per Failed to Run.");
+                sniper
+        });
+        tasks.push(cmd);
     }
     for domain in domains {
         //sniper -w <WORKSPACE> -t <DOMAIN> -o -re
@@ -206,7 +214,7 @@ async fn icmp_scan(targets:HashSet<IpAddr>,) -> Vec<IpAddr> {
 
 */
 
-fn to_hashmap(services:Vec<(SocketAddr, String)>) -> HashMap<String,HashSet<SocketAddr>>{
+fn to_hashmap(services:Vec<(SocketAddr, String)>) -> HashMap<String,HashSet<SocketAddr>>{ //not used since it was used after service detection.. can be removed likely but holding if needed 
     let mut out_map: HashMap<String,HashSet<SocketAddr>> = HashMap::new();
     for (socket,service) in services {
         out_map.entry(service).or_insert_with(HashSet::new).insert(socket);
