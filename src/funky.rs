@@ -1,7 +1,7 @@
 /*
 Custom functions for main.rs in this project
 
- - Noticed that merging the internal and external scans will cause external services that block icmp not return... should fix
+ - Noticed that merging the internal and external scans will cause external services that block icmp not return... should fix maybe add arg to skip
  - using the IP may not work in all cases.. need to store the domains as well as the IPs before feeding to sn1per
 
 */
