@@ -6,18 +6,32 @@ Custom functions for main.rs in this project
 
 */
 
-use std::{collections::HashSet, hash::Hash, net::{IpAddr, SocketAddr}, string};
+use std::{collections::{HashSet,HashMap}, net::{IpAddr, SocketAddr},time::Duration};
+use rustscan::{input::{PortRange,ScanOrder},port_strategy::PortStrategy,scanner::Scanner};
+use tokio::{process::Command,net::lookup_host};
+use futures::{executor::block_on,future::join_all};
+use surge_ping::IcmpPacket;
+use ipnet::{IpNet};
+use regex::Regex;
 
-async fn snipe(workspace:String, hosts:Vec<SocketAddr>) {
+pub async fn snipe(workspace:String, scope:String) {
     // runs sn1per per host from input
-    for socket in hosts {
-        //sniper -t <TARGET_IP> -m port -p <PORT_NUMBER> -o
+    let mut in_the_sights:Vec<String> = Vec::new();
+    for target in scope.split(",") {
+        in_the_sights.push(target.to_string());
+    }
+    let (hosts,domains) = base_scan(in_the_sights).await;
+    for (target, ports) in hosts {
+        //sniper -t <TARGET_IP> -m port -p <PORT_NUMBER> -o -re
+    }
+    for domain in domains {
+        //sniper -t <DOMAIN> -o -re
     }
 }
 
 async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<String>){ // base scan to replace the main fn of koboscan
     println!("[I] Sorting into target list");
-    let (targets,domains) =  sort_targets(hosts);
+    let (targets,domains) =  sort_targets(hosts).await;
     let live: Vec<IpAddr> = icmp_scan(targets).await;
 
         // Scanner setup for rustscan
@@ -28,13 +42,13 @@ async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<
     };
     let strat: PortStrategy = PortStrategy::pick(&Some(range), None, ScanOrder::Serial);
     let threads: u16 = 5000; //should be set by args
-    let scanner: Scanner = Scanner::new(&internal_pinged, threads, Duration::from_millis(1000), 1, false, strat, true, vec![9100,9101,9102], false);
+    let scanner: Scanner = Scanner::new(&live, threads, Duration::from_millis(1000), 1, false, strat, true, vec![9100,9101,9102], false);
         
         // starting scans 
 
     let mut ports:Vec<SocketAddr> = Vec::new();
     if !live.is_empty() {
-        ports = block_on(internal_scanner.run());
+        ports = block_on(scanner.run());
         //println!("Internal Results: {:?}",i_ports);
     } else {
         eprintln!("[!] No targets are live");
@@ -51,12 +65,12 @@ async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<
     * some may contain updates/edits
 */
 
-fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) {
+async fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) {
     /*
     returns the full target IP list as a tuple with (internal,external,domain) Vec<Strings>
      */
 
-    let mut targets: HashSet<IpAddr> = HashSet::new();
+    let mut o_targets: HashSet<IpAddr> = HashSet::new();
     let mut domains:HashSet<String> = HashSet::new();
 
     let domain_re = Regex::new(r#"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"#).expect("[!] Not a Domain");
@@ -68,19 +82,19 @@ fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) {
                     if ip.to_canonical().is_ipv4() {
                         if let IpAddr::V4(v4) = ip {
                             if v4.is_private() {
-                                targets.insert(ip);
+                                o_targets.insert(ip);
                                 _ = v4.is_private();
                             } else {
-                                targets.insert(ip);
+                                o_targets.insert(ip);
                                 _ = v4.is_private();
                             }
                         }
                     } else if ip.to_canonical().is_ipv6() {
                         if let IpAddr::V6(v6) = ip {
                             if v6.is_unique_local() {
-                                targets.insert(ip);
+                                o_targets.insert(ip);
                             } else {
-                                targets.insert(ip);
+                                o_targets.insert(ip);
                             }
                         }
                     }
@@ -91,14 +105,14 @@ fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) {
                 Ok(ip) => {
                     match ip {
                         IpAddr::V4(v4) => if v4.is_private() {
-                            targets.insert(ip);
+                            o_targets.insert(ip);
                         } else {
-                            targets.insert(ip);
+                            o_targets.insert(ip);
                         },
                         IpAddr::V6(v6) => if v6.is_unique_local(){
-                            targets.insert(ip);
+                            o_targets.insert(ip);
                         } else {
-                            targets.insert(ip); 
+                            o_targets.insert(ip); 
                         },
                     }
                 }
@@ -108,22 +122,22 @@ fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) {
         if domain_re.is_match(&target) {
             domains.insert(target.clone().to_string());
         }
-        let d_hostaddr = nslookup(domains.clone());
+        let d_hostaddr = nslookup(domains.clone()).await;
         for d_target in d_hostaddr {
-            targets.insert(d_target);
+            o_targets.insert(d_target);
         }
     }
-    (targets,domains)
+    (o_targets,domains)
 }
 
-fn nslookup(domains:HashSet<String>) -> HashSet<IpAddr> {
+async fn nslookup(domains:HashSet<String>) -> HashSet<IpAddr> {
     let mut addresses:HashSet<IpAddr> = HashSet::new();
 
     for domain in domains {
-        match lookup_host(&domain) {
+        match lookup_host(&domain).await {
             Ok(ips) => {
                 for ip in ips {
-                    addresses.insert(ip);
+                    addresses.insert(ip.ip());
                 }
             }
             Err(_e) => {}
@@ -132,13 +146,13 @@ fn nslookup(domains:HashSet<String>) -> HashSet<IpAddr> {
     addresses
 }
 
-async fn icmp_scan(targets:HashSet<IpAddr>,) -> (Vec<IpAddr>) {
+async fn icmp_scan(targets:HashSet<IpAddr>,) -> Vec<IpAddr> {
 
     let mut tasks = Vec::new();
     let mut o_targets: Vec<IpAddr> = Vec::new();
 
     for trg in targets {
-        tasks.push(tokio::spawn(surge_ping::ping(eip, &[0;8])));
+        tasks.push(tokio::spawn(surge_ping::ping(trg, &[0;8])));
     }
 
     let results = join_all(tasks).await;

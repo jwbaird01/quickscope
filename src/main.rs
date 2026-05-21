@@ -1,4 +1,3 @@
-use tokio::process::Command;
 use std::env;
 mod funky;
 
@@ -29,11 +28,11 @@ I need to look into if there is a mode that skips port scan then runs the other 
 */
 
 #[tokio::main]
-fn main() {
+async fn main() {
     let args: Vec<String> = env::args().collect();
     if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
         help(true);
     } else if args.contains(&"-w".to_string()) && args.contains(&"-f".to_string()) {
-        funky::snipe();
+        funky::snipe("test_space".to_string(),"1.1.1.1,8.8.8.8".to_string()).await;
     }
 }
