@@ -6,6 +6,7 @@ Custom functions for main.rs in this project
 
 */
 
+use core::task;
 use std::{collections::{HashSet,HashMap}, net::{IpAddr, SocketAddr},time::Duration};
 use rustscan::{input::{PortRange,ScanOrder},port_strategy::PortStrategy,scanner::Scanner};
 use tokio::{process::Command,net::lookup_host};
@@ -33,26 +34,41 @@ pub async fn snipe(workspace:String, scope:String) {
                     .arg("-m").arg("port").arg("-p").arg(ports)
                     .arg("-o").arg("-re")
                     .output()
-                    .await
-                    .expect("[!] Sn1per Failed to Run.");
-                sniper
+                    .await;
+                
+                match sniper {
+                    Ok(_out) => {
+                        println!("[+] Scan complete for {}",target);
+                    },
+                    Err(e) => eprintln!("[!] Failed to scan {} with sniper : ",&target,e),
+                }
         });
         tasks.push(cmd);
     }
     for domain in domains {
         //sniper -w <WORKSPACE> -t <DOMAIN> -o -re
         let ws: String = workspace.clone();
-        let cmdd: tokio::task::JoinHandle<std::process::Output> = tokio::spawn(async move {
-        let sniper: std::process::Output = Command::new("sniper")
+        let cmdd = tokio::spawn(async move {
+        let sniper = Command::new("sniper")
             .arg("-w").arg(&ws)
             .arg("-t").arg(&domain.to_string())
             .arg("-o").arg("-re")
-            .output().await
-            .expect("[!] Sn1per Failed to Run.");
-        sniper
+            .output().await;
+
+        match sniper {
+                Ok(_out) => {
+                    println!("[+] Scan complete for {}",&domain);
+                },
+                Err(e) => eprintln!("[!] Failed to scan {} with sniper : {}",&domain,e),
+            }
         });
         tasks.push(cmdd);
     }
+
+    println!("[*] Waiting for {} tasks to complete...",tasks.len());
+    join_all(tasks).await;
+    println!("[*] Scans complete.")
+
 }
 
 async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<String>){ // base scan to replace the main fn of koboscan
