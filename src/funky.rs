@@ -23,11 +23,12 @@ pub async fn snipe(workspace:String, scope:String) {
     }
     let (hosts,domains) = base_scan(in_the_sights).await;
     for (target, ports_set) in hosts {
+            let ws = workspace.clone();
             let ports:String = ports_set.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
             //sniper -w <WORKSPACE> -t <TARGET_IP> -m port -p <PORT_NUMBER> -o -re
             let cmd = tokio::spawn(async move {
                 let sniper = Command::new("sniper")
-                    .arg("-w").arg(&workspace)
+                    .arg("-w").arg(&ws)
                     .arg("-t").arg(&target.to_string())
                     .arg("-m").arg("port").arg("-p").arg(ports)
                     .arg("-o").arg("-re")
@@ -40,10 +41,17 @@ pub async fn snipe(workspace:String, scope:String) {
     }
     for domain in domains {
         //sniper -w <WORKSPACE> -t <DOMAIN> -o -re
-        let sniper = Command::new("sniper")
-            .arg("-w").arg(&workspace)
+        let ws: String = workspace.clone();
+        let cmdd: tokio::task::JoinHandle<std::process::Output> = tokio::spawn(async move {
+        let sniper: std::process::Output = Command::new("sniper")
+            .arg("-w").arg(&ws)
             .arg("-t").arg(&domain.to_string())
-            .arg("-o").arg("-re");
+            .arg("-o").arg("-re")
+            .output().await
+            .expect("[!] Sn1per Failed to Run.");
+        sniper
+        });
+        tasks.push(cmdd);
     }
 }
 
@@ -214,7 +222,7 @@ async fn icmp_scan(targets:HashSet<IpAddr>,) -> Vec<IpAddr> {
 
 */
 
-fn to_hashmap(services:Vec<(SocketAddr, String)>) -> HashMap<String,HashSet<SocketAddr>>{ //not used since it was used after service detection.. can be removed likely but holding if needed 
+fn _to_hashmap(services:Vec<(SocketAddr, String)>) -> HashMap<String,HashSet<SocketAddr>>{ //not used since it was used after service detection.. can be removed likely but holding if needed 
     let mut out_map: HashMap<String,HashSet<SocketAddr>> = HashMap::new();
     for (socket,service) in services {
         out_map.entry(service).or_insert_with(HashSet::new).insert(socket);

@@ -32,7 +32,7 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
         help(true);
-    } else if args.contains(&"-w".to_string()) && args.contains(&"-f".to_string()) {
+    } else if true { //args.contains(&"-w".to_string()) && args.contains(&"-f".to_string()) {
         funky::snipe("test_space".to_string(),"1.1.1.1,8.8.8.8".to_string()).await;
     }
 }
