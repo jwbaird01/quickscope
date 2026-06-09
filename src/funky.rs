@@ -6,8 +6,7 @@ Custom functions for main.rs in this project
 
 */
 
-use core::task;
-use std::{collections::{HashSet,HashMap}, net::{IpAddr, SocketAddr},time::Duration};
+use std::{collections::{HashMap, HashSet}, net::{IpAddr, SocketAddr}, process::exit, time::Duration};
 use rustscan::{input::{PortRange,ScanOrder},port_strategy::PortStrategy,scanner::Scanner};
 use tokio::{process::Command,net::lookup_host};
 use futures::{executor::block_on,future::join_all};
@@ -37,8 +36,13 @@ pub async fn snipe(workspace:String, scope:String) {
                     .await;
                 
                 match sniper {
-                    Ok(_out) => {
-                        println!("[+] Scan complete for {}",target);
+                    Ok(out) => {
+                            if String::from_utf8_lossy(&out.stderr) != "This script must be run as root" {
+                            println!("[+] Scan complete for {}",&target);
+                        } else {
+                            println!("[!] Script needs to be run as root");
+                            exit(0);
+                        }
                     },
                     Err(e) => eprintln!("[!] Failed to scan {} with sniper : {}",&target,e),
                 }
@@ -56,8 +60,13 @@ pub async fn snipe(workspace:String, scope:String) {
             .output().await;
 
         match sniper {
-                Ok(_out) => {
-                    println!("[+] Scan complete for {}",&domain);
+                Ok(out) => {
+                    if String::from_utf8_lossy(&out.stderr) != "This script must be run as root" {
+                        println!("[+] Scan complete for {}",&domain);
+                    } else {
+                        println!("[!] Script needs to be run as root");
+                        exit(0);
+                    }
                 },
                 Err(e) => eprintln!("[!] Failed to scan {} with sniper : {}",&domain,e),
             }
@@ -89,7 +98,7 @@ async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<
         // starting scans 
 
     let mut ports:Vec<SocketAddr> = Vec::new();
-    if !live.is_empty() {
+    if live.len() > 0 {
         ports = block_on(scanner.run());
         //println!("Internal Results: {:?}",i_ports);
     } else {
