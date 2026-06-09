@@ -82,9 +82,11 @@ pub async fn snipe(workspace:String, scope:String) {
 
 async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<String>){ // base scan to replace the main fn of koboscan
     println!("[I] Sorting into target list");
-    let (targets,domains) =  sort_targets(hosts).await;
-    let live: Vec<IpAddr> = icmp_scan(targets).await;
-
+    let (i_targets,o_targets,domains) =  sort_targets(hosts).await;
+    let mut live: Vec<IpAddr> = icmp_scan(i_targets).await;
+    for host in o_targets {
+        live.push(host);
+    }
         // Scanner setup for rustscan
 
     let range: PortRange = PortRange {
@@ -94,7 +96,7 @@ async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<
     let strat: PortStrategy = PortStrategy::pick(&Some(range), None, ScanOrder::Serial);
     let threads: u16 = 5000; //should be set by args
     let scanner: Scanner = Scanner::new(&live, threads, Duration::from_millis(1000), 1, false, strat, true, vec![9100,9101,9102], false);
-        
+
         // starting scans 
 
     let mut ports:Vec<SocketAddr> = Vec::new();
@@ -116,12 +118,13 @@ async fn base_scan(hosts:Vec<String>) -> (HashMap<IpAddr, HashSet<u16>>,HashSet<
     * some may contain updates/edits
 */
 
-async fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) {
+async fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<IpAddr>,HashSet<String>) {
     /*
     returns the full target IP list as a tuple with (internal,external,domain) Vec<Strings>
      */
 
     let mut o_targets: HashSet<IpAddr> = HashSet::new();
+    let mut i_targets: HashSet<IpAddr> = HashSet::new();
     let mut domains:HashSet<String> = HashSet::new();
 
     let domain_re = Regex::new(r#"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"#).expect("[!] Not a Domain");
@@ -133,17 +136,15 @@ async fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) 
                     if ip.to_canonical().is_ipv4() {
                         if let IpAddr::V4(v4) = ip {
                             if v4.is_private() {
-                                o_targets.insert(ip);
-                                _ = v4.is_private();
+                                i_targets.insert(ip);
                             } else {
                                 o_targets.insert(ip);
-                                _ = v4.is_private();
                             }
                         }
                     } else if ip.to_canonical().is_ipv6() {
                         if let IpAddr::V6(v6) = ip {
                             if v6.is_unique_local() {
-                                o_targets.insert(ip);
+                                i_targets.insert(ip);
                             } else {
                                 o_targets.insert(ip);
                             }
@@ -156,12 +157,12 @@ async fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) 
                 Ok(ip) => {
                     match ip {
                         IpAddr::V4(v4) => if v4.is_private() {
-                            o_targets.insert(ip);
+                            i_targets.insert(ip);
                         } else {
                             o_targets.insert(ip);
                         },
                         IpAddr::V6(v6) => if v6.is_unique_local(){
-                            o_targets.insert(ip);
+                            i_targets.insert(ip);
                         } else {
                             o_targets.insert(ip); 
                         },
@@ -178,7 +179,7 @@ async fn sort_targets(targets:Vec<String>) -> (HashSet<IpAddr>,HashSet<String>) 
             o_targets.insert(d_target);
         }
     }
-    (o_targets,domains)
+    (i_targets,o_targets,domains)
 }
 
 async fn nslookup(domains:HashSet<String>) -> HashSet<IpAddr> {
