@@ -40,7 +40,7 @@ pub async fn snipe(workspace:String, scope:String) {
                     Ok(_out) => {
                         println!("[+] Scan complete for {}",target);
                     },
-                    Err(e) => eprintln!("[!] Failed to scan {} with sniper : ",&target,e),
+                    Err(e) => eprintln!("[!] Failed to scan {} with sniper : {}",&target,e),
                 }
         });
         tasks.push(cmd);
